@@ -86,10 +86,10 @@ jsr halt
                  set pc, cons_final
 :cons_oom        set pc, halt
 :cons_final      set pop, z
-                 set pop, y
-                 set pop, x
-                 set pop, j
-                 set pop, i
+                 set y, pop
+                 set x, pop
+                 set j, pop
+                 set i, pop
                  set pc, pop
 :car             set a, [a]
                  set pc, pop
@@ -170,16 +170,15 @@ jsr halt
                  ADD C, Z
                  SET [C], 0x0 ; null terminate
 :itoa_itoaret    SET A, Z
-                 set pop, z
-                 set pop, y
-                 set pop, x
-                 set pop, c
-                 set pop, b
-                 set pop, a
-                 set pop, j
-                 set pop, i
-                 SET PC, POP
-:itoa_end
+                 set z, pop
+                 set y, pop
+                 set x, pop
+                 set c, pop
+                 set b, pop
+                 set a, pop
+                 set j, pop
+                 set i, pop
+:itoa_end        SET PC, POP
 
 ;;;; halt
 :halt            set [0xF801], 0xFFF0
