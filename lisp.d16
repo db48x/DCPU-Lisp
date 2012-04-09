@@ -181,5 +181,4 @@ jsr halt
 :itoa_end        SET PC, POP
 
 ;;;; halt
-:halt            set [0xF801], 0xFFF0
-                 set pc, 0xF801
+:halt            dat 0xFFF0
