@@ -1,0 +1,186 @@
+;;;; Copyright 2012 Daniel Brooks <db48x@db48x.net>
+;;;; Licensed GPL3; feel free to fork.
+
+;;;; first initialize the memory map
+;;;;   0x0000 - 0x01FF is used by functions atm
+;;;;   0x8000 - 0x81FF is the console
+;;;;   0x9000 - 0x900F is the keyboard buffer
+;;;;   0xF000 - 0xF7FF is the memory map
+;;;;   0xF800 - 0xFAFF will do for the environment(s)
+:init            set i, 0xF010
+:init_loop       sub i, 1
+                 ife i, 0xEFFF
+                 set pc, init2
+                 set [i], 0xFFFF
+                 set pc, init_loop
+:init2           set i, 0xF420
+:init2_loop      sub i, 1
+                 ife i, 0xF3FF
+                 set pc, init_final
+                 set [i], 0xFFFF
+                 set pc, init2_loop
+:init_final      set [0xF480], 0xF
+
+;;;; now execute a simple lisp program:
+;;;;  (print (car (cdr (cons (cons 42 (atom 24))))))
+set a, 24
+jsr atm2tag
+set b, a
+set a, 42
+jsr num2tag
+jsr cons
+jsr ptr2tag
+set b, a
+set a, 33
+jsr num2tag
+jsr cons
+set [root], a
+jsr cdr
+jsr tag2ptr
+jsr car
+jsr tag2num
+set b, 0x8000
+jsr itoa
+jsr halt
+
+;;;; we'll need a GC someday
+:root            dat 0x0200
+
+;;;; cons/car/cdr
+:cons            set push, i
+                 set push, j
+                 set push, x
+                 set push, y
+                 set push, z
+                 set i, 0xF000
+:cons_loop       set j, [i]
+                 ife j, 0xFFFF
+                 set pc, cons_loop_end
+                 set z, 0
+:cons_loop_inner set x, j
+                 set y, 1
+                 shl y, z
+                 ifb x, y
+                 set pc, cons_inner_test
+                 set pc, cons_found
+:cons_inner_test add z, 1
+                 ife z, 0x10
+                 set pc, cons_loop_end
+                 set pc, cons_loop_inner
+:cons_loop_end   add i, 1
+                 ife i, 0xFF80
+                 set pc, cons_oom
+                 set pc, cons_loop
+:cons_found      set y, 1
+                 shl y, z
+                 bor y, j
+                 set [i], y
+                 sub i, 0xF000
+                 mul i, 0x20
+                 mul z, 2
+                 add i, z
+                 set [i], a
+                 set a, i
+                 add i, 1
+                 set [i], b
+                 set pc, cons_final
+:cons_oom        set pc, halt
+:cons_final      set pop, z
+                 set pop, y
+                 set pop, x
+                 set pop, j
+                 set pop, i
+                 set pc, pop
+:car             set a, [a]
+                 set pc, pop
+:cdr             add a, 1
+                 set a, [a]
+                 set pc, pop
+
+;;;; numbers
+:num2tag         shl a, 2
+                 set pc, pop
+:tag2num         set push, b
+                 set b, 3
+                 ifb b, a
+                 set pc, halt
+                 shr a, 2
+                 set b, pop
+                 set pc, pop
+
+;;;; pointers
+:ptr2tag         shl a, 2
+                 add a, 1
+                 set pc, pop
+:tag2ptr         set push, b
+                 set b, 3
+                 and b, a
+                 ife b, 1
+                 set pc, tag2ptr_finish
+                 set pc, halt
+:tag2ptr_finish  shr a, 2
+                 set b, pop
+                 set pc, pop
+
+;;;; atoms
+:atm2tag         shl a, 2
+                 add a, 2
+                 set pc, pop
+:tag2atm         set push, b
+                 set b, 3
+                 and b, a
+                 ife b, 2
+                 set pc, tag2atm_finish
+                 set pc, halt
+:tag2atm_finish  shr a, 2
+                 set b, pop
+                 set pc, pop
+
+;;;; iota
+:itoa            set push, i
+                 set push, j
+                 set push, a
+                 set push, b
+                 set push, c
+                 set push, x
+                 set push, y
+                 set push, z
+                 SET J, 0
+:itoa_loop1      IFE A, 0
+                 SET PC, itoa_l2
+                 SET I, A
+                 MOD I, 0xa
+                 DIV A, 0xa
+                 SET PUSH, i
+                 ADD J, 1
+                 SET PC, itoa_loop1
+:itoa_l2         SET Z, 0
+:itoa_loop2      IFE J, 0
+                 SET PC, itoa_loop2end
+                 SET I, POP
+                 SET A, 0x30 ; '0'
+                 ADD A, I
+                 SET C, B
+                 ADD C, Z
+                 SET [C], A
+                 ADD Z, 1
+                 SUB J, 1
+                 SET PC, itoa_loop2
+:itoa_loop2end   SET C, B
+                 ADD C, Z
+                 SET [C], 0x0 ; null terminate
+:itoa_itoaret    SET A, Z
+                 set pop, z
+                 set pop, y
+                 set pop, x
+                 set pop, c
+                 set pop, b
+                 set pop, a
+                 set pop, j
+                 set pop, i
+                 SET PC, POP
+:itoa_end
+
+;;;; halt
+:halt            set [0xF801], 0xFFF0
+                 set pc, 0xF801
