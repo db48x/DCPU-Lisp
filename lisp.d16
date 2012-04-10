@@ -1,12 +1,14 @@
 ;;;; Copyright 2012 Daniel Brooks <db48x@db48x.net>
 ;;;; Licensed GPL3; feel free to fork.
 
-;;;; first initialize the memory map
-;;;;   0x0000 - 0x01FF is used by functions atm
-;;;;   0x8000 - 0x81FF is the console
-;;;;   0x9000 - 0x900F is the keyboard buffer
-;;;;   0xF000 - 0xF7FF is the memory map
-;;;;   0xF800 - 0xFAFF will do for the environment(s)
+;;; first initialize the memory map
+;;;   0x0000 - 0x01FF is used by functions atm
+;;;   0x8000 - 0x81FF is the console
+;;;   0x9000 - 0x900F is the keyboard buffer
+;;;   0xF000 - 0xF780 is the memory map
+;;;   0xF780 - 0xF87F for environment frames (1 word each)
+;;;   0xF880 - 0xFA7F for bindings (2 words each)
+;;;   0xFA80 - 0xFFFF left over for the stack
 :init            set i, 0xF010
 :init_loop       sub i, 1
                  ife i, 0xEFFF
@@ -21,8 +23,24 @@
                  set pc, init2_loop
 :init_final      set [0xF480], 0xF
 
-;;;; now execute a simple lisp program:
-;;;;  (print (car (cdr (cons (cons 42 (atom 24))))))
+set [0xF780], 0x1
+set [0xF880], 0xFFFF
+set [0xF881], 0xFFFF
+set a, 0
+jsr atm2tag
+set [0xF882], a
+set a, 11
+jsr atm2tag
+set b, a
+set a, 42
+jsr num2tag
+set c, a
+set a, 0xF780
+jsr env_append_var
+set pc, halt
+
+;;; now execute a simple lisp program:
+;;;  (print (car (cdr (cons (cons 42 (atom 24))))))
 set a, 24
 jsr atm2tag
 set b, a
@@ -43,10 +61,10 @@ set b, 0x8000
 jsr itoa
 jsr halt
 
-;;;; we'll need a GC someday
+;;; we'll need a GC someday
 :root            dat 0x0200
 
-;;;; cons/car/cdr
+;;; cons/car/cdr
 :cons            set push, i
                  set push, j
                  set push, x
@@ -97,7 +115,7 @@ jsr halt
                  set a, [a]
                  set pc, pop
 
-;;;; numbers
+;;; numbers
 :num2tag         shl a, 2
                  set pc, pop
 :tag2num         set push, b
@@ -108,7 +126,7 @@ jsr halt
                  set b, pop
                  set pc, pop
 
-;;;; pointers
+;;; pointers
 :ptr2tag         shl a, 2
                  add a, 1
                  set pc, pop
@@ -122,8 +140,10 @@ jsr halt
                  set b, pop
                  set pc, pop
 
-;;;; atoms
-:atm2tag         shl a, 2
+;;; atoms
+:atm2tag         ifg a, 0xFF
+                 set pc, halt
+                 shl a, 2
                  add a, 2
                  set pc, pop
 :tag2atm         set push, b
@@ -132,11 +152,82 @@ jsr halt
                  ife b, 2
                  set pc, tag2atm_finish
                  set pc, halt
-:tag2atm_finish  shr a, 2
+:tag2atm_finish  ifg a, 0xFF
+                 set pc, halt
+                 shr a, 2
                  set b, pop
                  set pc, pop
 
-;;;; iota
+;;; environments
+:make_env        add a, 0xF77F
+                 set pc, pop
+:env_parent      set a, [a]
+                 shr a, 8
+                 add a, 0xF77F
+                 set pc, pop
+:env_vars        set a, [a]
+                 and a, 0xFF
+                 shl a, 1
+                 add a, 0xF880
+                 set pc, pop
+:env_append_var  set push, a
+                 set push, x
+                 set push, y
+                 set push, z
+                 set push, i
+                 set push, j
+                 set x, a
+                 jsr env_vars
+                 set y, a
+                 jsr env_alloc_var
+                 set z, a
+                 sub a, 0xF87E
+                 shl a, 1
+                 set i, a
+                 set a, y
+                 jsr env_var_atom
+                 and a, i
+                 set [y], a
+                 set a, [x]
+                 and a, 0xFF00
+                 and a, z
+                 set [x], a
+                 set a, b
+                 jsr tag2atm
+                 set [z], a
+                 set [1+z], c
+                 set j, pop
+                 set i, pop
+                 set z, pop
+                 set y, pop
+                 set x, pop
+                 set a, pop
+                 set pc, pop
+:env_alloc_var   set a, 0xF87E
+:env_alloc_var_l add a, 2
+                 ife [a], 0
+                 set pc, env_alloc_var_1
+                 set pc, env_alloc_var_l
+:env_alloc_var_1 ife [1+a], 0
+                 set pc, env_alloc_var_f
+                 set pc, env_alloc_var_l
+:env_alloc_var_f set pc, pop
+:env_find_var    set a, a
+:env_var_next    set a, [a]
+                 shr a, 9
+                 add a, 0xF87E
+                 set pc, pop
+:env_var_atom    set a, [a]
+                 and a, 0xFF
+                 set pc, pop
+:env_var_value   add a, 1
+                 set a, [a]
+                 set pc, pop
+
+;;; iota
+;;; this creates a null-terminated string with one character per word
+;;; we should instead use pascal-style strings with two characters per word
+;;; displaying them won't be any slower, and manipulating lisp source will be faster 
 :itoa            set push, i
                  set push, j
                  set push, a
@@ -178,7 +269,7 @@ jsr halt
                  set a, pop
                  set j, pop
                  set i, pop
-:itoa_end        SET PC, POP
+                 SET PC, POP
 
 ;;;; halt
 :halt            dat 0xFFF0
